@@ -64,6 +64,7 @@ def batch_upload():
     files = request.files.getlist('files[]')
     formats = request.form.getlist('formats[]')
     presets = request.form.getlist('presets[]')
+    edit_params_list = request.form.getlist('edit_params[]')
     
     if not files or not formats:
         return jsonify({'error': 'Missing data'}), 400
@@ -71,6 +72,7 @@ def batch_upload():
     batch_id = uuid.uuid4().hex[:8]
     batch_tasks = []
     
+    import json
     for i, file in enumerate(files):
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
@@ -78,19 +80,23 @@ def batch_upload():
             input_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             file.save(input_path)
             
-            # Trace log
-            print(f"[DEBUG] File saved to: {input_path}")
-            print(f"[DEBUG] File exists: {os.path.exists(input_path)}")
-            
             target_format = formats[i]
             preset = presets[i] if i < len(presets) else 'balanced'
+            
+            # Parse edit_params if provided
+            edit_params = None
+            if i < len(edit_params_list) and edit_params_list[i]:
+                try:
+                    edit_params = json.loads(edit_params_list[i])
+                except:
+                    pass
             
             filename_no_ext = filename.rsplit('.', 1)[0]
             output_filename = f"converted_{filename_no_ext}_{uuid.uuid4().hex[:4]}.{target_format.lower()}"
             output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
             
-            # Start Celery Task
-            task = convert_task.delay(input_path, output_path, target_format, preset)
+            # Start Celery Task with edit_params
+            task = convert_task.delay(input_path, output_path, target_format, preset, edit_params=edit_params)
             batch_tasks.append({
                 'task_id': task.id,
                 'original_name': filename,

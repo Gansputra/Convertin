@@ -33,7 +33,7 @@ CONVERTER_MAP = {
 }
 
 @celery.task(bind=True)
-def convert_task(self, input_path, output_path, target_format, preset):
+def convert_task(self, input_path, output_path, target_format, preset, edit_params=None):
     """
     Background task to convert a single file.
     """
@@ -55,7 +55,14 @@ def convert_task(self, input_path, output_path, target_format, preset):
         preset_params = PresetManager.get_preset_params(preset, target_format)
         
         self.update_state(state='PROGRESS', meta={'progress': 50})
-        success = converter_function(input_path, output_path, target_format, preset_params=preset_params)
+        # Pass both preset_params and edit_params
+        success = converter_function(
+            input_path, 
+            output_path, 
+            target_format, 
+            preset_params=preset_params,
+            edit_params=edit_params
+        )
         
         if success:
             self.update_state(state='PROGRESS', meta={'progress': 100})

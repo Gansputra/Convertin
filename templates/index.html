@@ -9,6 +9,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
     <style>
         body {
             font-family: 'Outfit', sans-serif;
@@ -105,6 +109,52 @@
         @keyframes shimmer {
             0% { background-position: -200% 0; }
             100% { background-position: 200% 0; }
+        }
+        /* noUiSlider Indigo Theme */
+        .noUi-target {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            border-radius: 999px;
+            box-shadow: none;
+            height: 6px;
+        }
+        .noUi-connect {
+            background: #6366f1;
+        }
+        .noUi-handle {
+            width: 16px !important;
+            height: 16px !important;
+            right: -8px !important;
+            top: -6px !important;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #6366f1;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+            cursor: pointer;
+        }
+        .noUi-handle::before, .noUi-handle::after { display: none; }
+        .waveform-container {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 8px;
+        }
+
+        /* Modern Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.6);
         }
     </style>
 </head>
@@ -203,13 +253,29 @@
                         <div class="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-2 border border-emerald-500/30">
                             <i data-lucide="party-popper" class="w-8 h-8 text-emerald-400"></i>
                         </div>
-                        <h2 class="text-xl font-bold text-white">Semua Selesai!</h2>
-                        <button type="button" onclick="downloadAllAsZip()" 
-                                class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
-                            <i data-lucide="archive" class="w-5 h-5"></i>
-                            Download Semua (ZIP)
-                        </button>
-                        <p class="text-xs text-gray-500">Atau download satu per satu melalui daftar di atas.</p>
+                        <h2 class="text-xl font-bold text-white">Konversi Selesai!</h2>
+                        
+                        <!-- Single Download Button (Hidden by default) -->
+                        <div id="singleDownloadArea" class="hidden">
+                            <a id="singleDownloadBtn" href="#" 
+                               class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                                Download File Hasil
+                            </a>
+                        </div>
+
+                        <!-- ZIP Download Button (Hidden by default) -->
+                        <div id="zipDownloadArea" class="hidden">
+                            <button type="button" onclick="downloadAllAsZip()" 
+                                    class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+                                <i data-lucide="archive" class="w-5 h-5"></i>
+                                Download Semua (ZIP)
+                            </button>
+                        </div>
+
+                        <p class="text-xs text-gray-500 font-medium">Klik tombol di atas untuk mengunduh hasil.</p>
+                        
+                        <button type="button" onclick="resetUpload()" class="text-indigo-400 hover:text-indigo-300 text-xs font-semibold">Konversi File Lain</button>
                     </div>
                 </form>
             {% endif %}
@@ -250,8 +316,9 @@
     <script>
         lucide.createIcons();
 
-        let selectedFiles = []; // Array of objects { file, metadata, recommendation, target_format, preset, state, task_id, progress }
+        let selectedFiles = []; 
         let currentBatchId = null;
+        const componentInstances = {}; // Store WaveSurfer and Slider instances
 
         const formatOptions = {
             'image': { ext: ['jpg', 'jpeg', 'png', 'webp', 'svg'], targets: ['PNG', 'JPG', 'WEBP'], icon: 'image' },
@@ -265,7 +332,6 @@
             const files = Array.from(input.files);
             if (!files.length) return;
 
-            // Show global loading while analyzing first file or setting up
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingTitle').innerText = "Menganalisis Files...";
 
@@ -279,12 +345,11 @@
                     preset: 'balanced',
                     metadata: null,
                     recommendation: null,
-                    output_filename: null
+                    output_filename: null,
+                    edit_params: {}
                 };
                 selectedFiles.push(entry);
                 renderFileItem(entry);
-
-                // Run analysis in background for each
                 analyzeFileEntry(entry);
             }
 
@@ -296,22 +361,17 @@
         async function analyzeFileEntry(entry) {
             const formData = new FormData();
             formData.append('file', entry.file);
-
             try {
                 const response = await fetch('/analyze', { method: 'POST', body: formData });
                 const data = await response.json();
-                
                 if (data.error) throw new Error(data.error);
-
                 entry.metadata = data.metadata;
                 entry.recommendation = data.recommendations[0];
                 entry.target_format = entry.recommendation.target_format;
                 entry.preset = entry.recommendation.preset;
                 entry.state = 'ready';
-                
                 updateFileItemUI(entry);
             } catch (err) {
-                console.error("Analysis failed for", entry.file.name, err);
                 entry.state = 'error';
                 updateFileItemUI(entry);
             }
@@ -323,18 +383,13 @@
             item.id = `file-${entry.id}`;
             item.className = "glass rounded-2xl p-4 border border-white/5 animate-in slide-in-from-right-4 duration-300";
             
-            // Preview logic
-            let previewHtml = `<div class="w-16 h-16 bg-gray-800 rounded-lg flex items-center justify-center"><i data-lucide="file" class="text-gray-600"></i></div>`;
             const type = entry.file.type;
             const url = URL.createObjectURL(entry.file);
+            let previewHtml = `<div class="w-16 h-16 bg-gray-800 rounded-lg flex items-center justify-center"><i data-lucide="file" class="text-gray-600"></i></div>`;
 
-            if (type.startsWith('image/')) {
-                previewHtml = `<img src="${url}" class="w-16 h-16 object-cover rounded-lg">`;
-            } else if (type.startsWith('video/')) {
-                previewHtml = `<video src="${url}" class="w-16 h-16 object-cover rounded-lg"></video>`;
-            } else if (type.startsWith('audio/')) {
-                previewHtml = `<div class="w-16 h-16 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400"><i data-lucide="music"></i></div>`;
-            }
+            if (type.startsWith('image/')) previewHtml = `<img src="${url}" class="w-16 h-16 object-cover rounded-lg">`;
+            else if (type.startsWith('video/')) previewHtml = `<video src="${url}" class="w-16 h-16 object-cover rounded-lg"></video>`;
+            else if (type.startsWith('audio/')) previewHtml = `<div class="w-16 h-16 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400"><i data-lucide="music"></i></div>`;
 
             item.innerHTML = `
                 <div class="flex items-center gap-4">
@@ -353,8 +408,6 @@
                             <span>Sizing: ${formatSize(entry.file.size)}</span>
                             <span id="meta-${entry.id}">Tunggu analisis...</span>
                         </div>
-                        
-                        <!-- Progress Area -->
                         <div id="progress-container-${entry.id}" class="hidden mt-3">
                             <div class="flex justify-between text-[9px] mb-1">
                                 <span class="text-indigo-400 font-medium">Processing...</span>
@@ -364,47 +417,172 @@
                                 <div id="progress-bar-${entry.id}" class="h-full bg-indigo-500 transition-all duration-300" style="width: 0%"></div>
                             </div>
                         </div>
-
-                        <!-- Config Area (Hidden while processing) -->
                         <div id="config-${entry.id}" class="hidden mt-3 flex items-center gap-3">
-                            <select onchange="updateEntryFormat('${entry.id}', this.value)" class="bg-white/5 border border-white/10 rounded-lg py-1 px-2 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                                <!-- Options will be injected -->
-                            </select>
+                            <select onchange="updateEntryFormat('${entry.id}', this.value)" class="bg-white/5 border border-white/10 rounded-lg py-1 px-2 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"></select>
                             <span class="text-[9px] text-gray-400" id="rec-hint-${entry.id}"></span>
+                            <button type="button" onclick="toggleEditPanel('${entry.id}')" id="edit-btn-${entry.id}" class="ml-auto flex items-center gap-1.5 px-2 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg text-[9px] font-bold transition-all border border-indigo-500/20">
+                                <i data-lucide="sliders" class="w-3 h-3"></i> EDIT TOOLS
+                            </button>
                         </div>
                     </div>
-                    <button type="button" onclick="removeEntry('${entry.id}')" class="text-gray-600 hover:text-rose-400 transition-colors p-1">
-                        <i data-lucide="x" class="w-4 h-4"></i>
-                    </button>
+                    <button type="button" onclick="removeEntry('${entry.id}')" class="text-gray-600 hover:text-rose-400 transition-colors p-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div id="edit-panel-${entry.id}" class="hidden mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
+                    <div id="visual-editor-${entry.id}" class="mb-4"></div>
+                    <div class="grid grid-cols-2 gap-4" id="tools-container-${entry.id}"></div>
                 </div>
             `;
             list.appendChild(item);
             lucide.createIcons();
         }
 
+        function toggleEditPanel(id) {
+            const panel = document.getElementById(`edit-panel-${id}`);
+            const btn = document.getElementById(`edit-btn-${id}`);
+            const entry = selectedFiles.find(e => e.id === id);
+            
+            panel.classList.toggle('hidden');
+            if (panel.classList.contains('hidden')) {
+                btn.classList.remove('bg-indigo-500/30', 'border-indigo-500/50');
+            } else {
+                btn.classList.add('bg-indigo-500/30', 'border-indigo-500/50');
+                if (entry && (entry.file.type.startsWith('audio/') || entry.file.type.startsWith('video/'))) {
+                    initVisualTrimmer(entry);
+                }
+            }
+        }
+
+        function initVisualTrimmer(entry) {
+            const container = document.getElementById(`visual-editor-${entry.id}`);
+            if (container.innerHTML !== "") return; // Already init
+
+            const url = URL.createObjectURL(entry.file);
+            const duration = entry.metadata.duration || 0;
+
+            if (entry.file.type.startsWith('audio/')) {
+                const waveId = `wave-${entry.id}`;
+                container.innerHTML = `
+                    <div class="waveform-container">
+                        <div id="${waveId}"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] text-gray-500 mt-2">
+                        <span id="time-start-${entry.id}">00:00</span>
+                        <div class="flex gap-2">
+                             <button type="button" onclick="componentInstances['${entry.id}'].ws.playPause()" class="p-1 px-2 bg-white/10 rounded hover:bg-white/20"><i data-lucide="play" class="w-3 h-3 inline"></i> Play/Pause</button>
+                        </div>
+                        <span id="time-end-${entry.id}">${formatTime(duration)}</span>
+                    </div>
+                `;
+                
+                const ws = WaveSurfer.create({
+                    container: `#${waveId}`,
+                    waveColor: '#4f46e5',
+                    progressColor: '#818cf8',
+                    cursorColor: '#fff',
+                    height: 50,
+                    plugins: [WaveSurfer.Regions.create()]
+                });
+
+                ws.load(url);
+                ws.on('ready', () => {
+                   const region = ws.registerPlugin(WaveSurfer.Regions.create()).addRegion({
+                        start: 0,
+                        end: duration * 0.8,
+                        color: 'rgba(99, 102, 241, 0.2)',
+                        drag: true,
+                        resize: true
+                    });
+                    
+                    region.on('update-end', () => {
+                        updateEditParam(entry.id, 'trim_start', region.start.toFixed(2));
+                        updateEditParam(entry.id, 'trim_end', region.end.toFixed(2));
+                        document.getElementById(`time-start-${entry.id}`).innerText = formatTime(region.start);
+                        document.getElementById(`time-end-${entry.id}`).innerText = formatTime(region.end);
+                    });
+                    
+                    // Set initial
+                    updateEditParam(entry.id, 'trim_start', "0.00");
+                    updateEditParam(entry.id, 'trim_end', (duration * 0.8).toFixed(2));
+                });
+                
+                componentInstances[entry.id] = { ws };
+            } else if (entry.file.type.startsWith('video/')) {
+                const videoId = `vid-edit-${entry.id}`;
+                const sliderId = `slider-${entry.id}`;
+                container.innerHTML = `
+                    <div class="relative rounded-xl overflow-hidden bg-black aspect-video mb-3">
+                        <video id="${videoId}" src="${url}" class="w-full h-full"></video>
+                        <div class="absolute bottom-2 left-2 right-2 px-4 py-2 bg-black/60 backdrop-blur rounded-lg flex items-center gap-3">
+                            <button type="button" onclick="toggleVideoPlay('${videoId}')" class="text-white"><i data-lucide="play" class="w-4 h-4"></i></button>
+                            <span class="text-[10px] text-white" id="vid-time-${entry.id}">00:00 / ${formatTime(duration)}</span>
+                        </div>
+                    </div>
+                    <div class="px-2 pt-2">
+                        <div id="${sliderId}" class="mb-6"></div>
+                        <div class="flex justify-between text-[10px] text-gray-500 -mt-2">
+                            <span id="v-start-${entry.id}">00:00</span>
+                            <span id="v-end-${entry.id}">${formatTime(duration)}</span>
+                        </div>
+                    </div>
+                `;
+
+                const video = document.getElementById(videoId);
+                const slider = document.getElementById(sliderId);
+
+                noUiSlider.create(slider, {
+                    start: [0, duration],
+                    connect: true,
+                    range: { 'min': 0, 'max': duration }
+                });
+
+                slider.noUiSlider.on('update', (values) => {
+                    const start = parseFloat(values[0]);
+                    const end = parseFloat(values[1]);
+                    document.getElementById(`v-start-${entry.id}`).innerText = formatTime(start);
+                    document.getElementById(`v-end-${entry.id}`).innerText = formatTime(end);
+                    updateEditParam(entry.id, 'trim_start', start.toFixed(2));
+                    updateEditParam(entry.id, 'trim_end', end.toFixed(2));
+                    
+                    // Preview seek to start when adjusting
+                    video.currentTime = start;
+                });
+
+                video.ontimeupdate = () => {
+                    document.getElementById(`vid-time-${entry.id}`).innerText = `${formatTime(video.currentTime)} / ${formatTime(duration)}`;
+                };
+
+                componentInstances[entry.id] = { slider };
+            }
+            lucide.createIcons();
+        }
+
+        function toggleVideoPlay(id) {
+            const v = document.getElementById(id);
+            if (v.paused) v.play(); else v.pause();
+        }
+
         function updateFileItemUI(entry) {
             const badge = document.getElementById(`status-badge-${entry.id}`);
             const metaSpan = document.getElementById(`meta-${entry.id}`);
             const configDiv = document.getElementById(`config-${entry.id}`);
-            const recHint = document.getElementById(`rec-hint-${entry.id}`);
             const select = configDiv.querySelector('select');
+            const toolsContainer = document.getElementById(`tools-container-${entry.id}`);
 
             if (entry.state === 'ready') {
                 badge.innerText = "READY";
                 badge.className = "text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 uppercase font-bold";
-                
                 const meta = entry.metadata;
                 metaSpan.innerText = `${meta.format.toUpperCase()} ${meta.resolution ? '• ' + meta.resolution : ''} ${meta.duration ? '• ' + meta.duration.toFixed(1)+'s' : ''}`;
                 
-                // Populating select options
                 select.innerHTML = '';
                 const ext = entry.file.name.split('.').pop().toLowerCase();
+                let fileCategory = '';
                 for (const [cat, data] of Object.entries(formatOptions)) {
                     if (data.ext.includes(ext)) {
+                        fileCategory = cat;
                         data.targets.forEach(fmt => {
                             const opt = document.createElement('option');
-                            opt.value = fmt.toLowerCase();
-                            opt.text = fmt.toUpperCase();
+                            opt.value = fmt.toLowerCase(); opt.text = fmt.toUpperCase();
                             if (fmt.toLowerCase() === entry.target_format.toLowerCase()) opt.selected = true;
                             select.appendChild(opt);
                         });
@@ -412,12 +590,66 @@
                     }
                 }
                 
-                recHint.innerText = `Recomended: ${entry.recommendation.target_format.toUpperCase()} (${entry.recommendation.preset})`;
+                let toolsHtml = '';
+                if (fileCategory === 'video') {
+                    toolsHtml = `
+                        <div class="space-y-2">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Resolusi</label>
+                            <select onchange="updateEditParam('${entry.id}', 'resolution', this.value)" class="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white">
+                                <option value="">Original</option>
+                                <option value="720p">720p (HD)</option>
+                                <option value="480p">480p (SD)</option>
+                                <option value="360p">360p</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2 flex items-center gap-2 mt-4">
+                            <input type="checkbox" id="check-va-${entry.id}" onchange="updateEditParam('${entry.id}', 'extract_audio', this.checked)" class="rounded bg-indigo-500/20 border-white/10 text-indigo-500">
+                            <label for="check-va-${entry.id}" class="text-[10px] text-gray-400">Ekstrak Audio Saja</label>
+                        </div>
+                    `;
+                } else if (fileCategory === 'image') {
+                    toolsHtml = `
+                        <div class="space-y-2">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Ukuran</label>
+                            <div class="flex gap-2">
+                                <input type="number" placeholder="Lebar" onchange="updateEditParam('${entry.id}', 'width', this.value)" class="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white">
+                                <input type="number" placeholder="Tinggi" onchange="updateEditParam('${entry.id}', 'height', this.value)" class="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white">
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Watermark</label>
+                            <input type="text" placeholder="Teks..." onchange="updateEditParam('${entry.id}', 'watermark_text', this.value)" class="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white">
+                        </div>
+                        <div class="col-span-2 flex items-center gap-2 mt-1">
+                            <input type="checkbox" id="check-ic-${entry.id}" onchange="updateEditParam('${entry.id}', 'auto_crop', this.checked)" class="rounded bg-indigo-500/20 border-white/10 text-indigo-500">
+                            <label for="check-ic-${entry.id}" class="text-[10px] text-gray-400">Crop Otomatis (80% Tengah)</label>
+                        </div>
+                    `;
+                } else if (fileCategory === 'audio') {
+                    toolsHtml = `
+                        <div class="space-y-2 flex items-center gap-2 mt-4">
+                            <input type="checkbox" id="check-an-${entry.id}" onchange="updateEditParam('${entry.id}', 'noise_reduction', this.checked)" class="rounded bg-indigo-500/20 border-white/10 text-indigo-500">
+                            <label for="check-an-${entry.id}" class="text-[10px] text-gray-400">Noise Reduction (FFT)</label>
+                        </div>
+                    `;
+                } else {
+                    toolsHtml = `<div class="col-span-2 text-center text-gray-500 text-[10px] py-2">Tidak tersedia fitur editing.</div>`;
+                }
+                toolsContainer.innerHTML = toolsHtml;
+                document.getElementById(`rec-hint-${entry.id}`).innerText = `Recommended: ${entry.recommendation.target_format.toUpperCase()}`;
                 configDiv.classList.remove('hidden');
             } else if (entry.state === 'error') {
                 badge.innerText = "UNSUPPORTED";
                 badge.className = "text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 uppercase font-bold";
-                metaSpan.innerText = "Format ini belum didukung saat ini.";
+                metaSpan.innerText = "Format ini belum didukung.";
+            }
+        }
+
+        function updateEditParam(id, key, value) {
+            const entry = selectedFiles.find(e => e.id === id);
+            if (entry) {
+                if (value === "" || value === false) delete entry.edit_params[key];
+                else entry.edit_params[key] = value;
             }
         }
 
@@ -435,42 +667,32 @@
 
         async function startBatchConversion() {
             if (!selectedFiles.length) return;
-
             const formData = new FormData();
             selectedFiles.forEach(e => {
                 formData.append('files[]', e.file);
                 formData.append('formats[]', e.target_format);
                 formData.append('presets[]', e.preset);
+                formData.append('edit_params[]', JSON.stringify(e.edit_params));
             });
-
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingTitle').innerText = "Mengupload...";
-            document.getElementById('loadingDesc').innerText = "Proses upload sedang berjalan.";
-
             try {
                 const response = await fetch('/batch-upload', { method: 'POST', body: formData });
                 const data = await response.json();
-                
                 if (data.error) throw new Error(data.error);
-
                 currentBatchId = data.batch_id;
                 document.getElementById('loadingOverlay').classList.add('hidden');
                 document.getElementById('batchActions').classList.add('hidden');
-                
-                // Map task IDs back to our entries
                 data.tasks.forEach((task, idx) => {
                     selectedFiles[idx].task_id = task.task_id;
                     selectedFiles[idx].output_filename = task.output_filename;
                     selectedFiles[idx].state = 'processing';
-                    
-                    // Show progress bar
                     document.getElementById(`status-badge-${selectedFiles[idx].id}`).innerText = "QUEUED";
                     document.getElementById(`progress-container-${selectedFiles[idx].id}`).classList.remove('hidden');
                     document.getElementById(`config-${selectedFiles[idx].id}`).classList.add('hidden');
-                    
+                    document.getElementById(`edit-panel-${selectedFiles[idx].id}`).classList.add('hidden');
                     pollTaskStatus(selectedFiles[idx]);
                 });
-
             } catch (err) {
                 alert("Upload failed: " + err.message);
                 document.getElementById('loadingOverlay').classList.add('hidden');
@@ -482,56 +704,57 @@
                 try {
                     const response = await fetch(`/task-status/${entry.task_id}`);
                     const data = await response.json();
-
                     const bar = document.getElementById(`progress-bar-${entry.id}`);
                     const text = document.getElementById(`progress-text-${entry.id}`);
                     const badge = document.getElementById(`status-badge-${entry.id}`);
-
                     if (data.state === 'PROGRESS') {
                         const progress = data.info.progress;
-                        bar.style.width = `${progress}%`;
-                        text.innerText = `${progress}%`;
+                        bar.style.width = `${progress}%`; text.innerText = `${progress}%`;
                         badge.innerText = "PROCESSING";
-                    } else if (data.state === 'PENDING') {
-                        badge.innerText = "QUEUED";
-                        text.innerText = "Waiting...";
                     } else if (data.state === 'SUCCESS') {
                         clearInterval(interval);
-                        bar.style.width = `100%`;
-                        bar.className = "h-full bg-emerald-500 transition-all";
-                        text.innerText = `100%`;
-                        text.className = "text-emerald-400";
+                        bar.style.width = `100%`; bar.className = "h-full bg-emerald-500 transition-all";
+                        text.innerText = `100%`; text.className = "text-emerald-400";
                         badge.innerText = "DONE";
                         badge.className = "text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 uppercase font-bold";
-                        entry.state = 'done';
-                        checkAllFinished();
-                    } else if (data.state === 'FAILURE' || (data.info && data.info.status === 'error')) {
+                        entry.state = 'done'; checkAllFinished();
+                    } else if (data.state === 'FAILURE') {
                         clearInterval(interval);
                         badge.innerText = "FAILED";
                         badge.className = "text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 uppercase font-bold";
-                        entry.state = 'error';
-                        checkAllFinished();
+                        entry.state = 'error'; checkAllFinished();
                     }
-                } catch (err) {
-                    console.error("Polling error", err);
-                }
+                } catch (err) {}
             }, 1500);
         }
 
         function checkAllFinished() {
-            const allFinished = selectedFiles.every(e => e.state === 'done' || e.state === 'error');
-            if (allFinished) {
+            const finishedFiles = selectedFiles.filter(e => e.state === 'done');
+            if (selectedFiles.every(e => e.state === 'done' || e.state === 'error')) {
                 document.getElementById('finalActions').classList.remove('hidden');
+                
+                const singleArea = document.getElementById('singleDownloadArea');
+                const zipArea = document.getElementById('zipDownloadArea');
+
+                if (finishedFiles.length === 1) {
+                    // Single file success -> Direct download
+                    singleArea.classList.remove('hidden');
+                    zipArea.classList.add('hidden');
+                    const btn = document.getElementById('singleDownloadBtn');
+                    btn.href = `/download/${finishedFiles[0].output_filename}`;
+                    btn.download = finishedFiles[0].output_filename;
+                } else if (finishedFiles.length > 1) {
+                    // Multiple files -> ZIP
+                    singleArea.classList.add('hidden');
+                    zipArea.classList.remove('hidden');
+                }
             }
         }
 
         async function downloadAllAsZip() {
             const convertedFiles = selectedFiles.filter(e => e.state === 'done').map(e => e.output_filename);
-            
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingTitle').innerText = "Mengompresi...";
-            document.getElementById('loadingDesc').innerText = "Sedang membungkus hasil konversi ke file ZIP.";
-
             try {
                 const response = await fetch('/create-zip', {
                     method: 'POST',
@@ -539,8 +762,6 @@
                     body: JSON.stringify({ batch_id: currentBatchId, filenames: convertedFiles })
                 });
                 const data = await response.json();
-                
-                // Need to poll zip task too
                 const zipInterval = setInterval(async () => {
                     const res = await fetch(`/task-status/${data.task_id}`);
                     const status = await res.json();
@@ -551,51 +772,44 @@
                     }
                 }, 1000);
             } catch (err) {
-                alert("ZIP creation failed");
                 document.getElementById('loadingOverlay').classList.add('hidden');
             }
         }
 
         function resetUpload() {
-            selectedFiles = [];
-            currentBatchId = null;
+            selectedFiles = []; currentBatchId = null;
             document.getElementById('fileInput').value = "";
             document.getElementById('fileList').innerHTML = "";
-            document.getElementById('dropPrompt').classList.remove('hidden');
             document.getElementById('batchActions').classList.add('hidden');
             document.getElementById('finalActions').classList.add('hidden');
+            document.getElementById('singleDownloadArea').classList.add('hidden');
+            document.getElementById('zipDownloadArea').classList.add('hidden');
         }
 
         function formatSize(bytes) {
             if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
         function openPreview(url, type) {
-            // Simple logic to show full screen preview
             const modal = document.createElement('div');
             modal.className = "fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8 animate-in fade-in duration-300";
             modal.onclick = () => modal.remove();
-            
             let content = '';
             if (type.startsWith('image/')) content = `<img src="${url}" class="max-w-full max-h-full rounded-xl">`;
             else if (type.startsWith('video/')) content = `<video src="${url}" controls autoplay class="max-w-full max-h-full rounded-xl"></video>`;
             else if (type.startsWith('audio/')) content = `<audio src="${url}" controls autoplay class="w-full max-w-md"></audio>`;
-            else content = `<div class="text-white text-xl">Preview tidak tersedia untuk format ini.</div>`;
-            
-            modal.innerHTML = `
-                <div class="relative w-full h-full flex items-center justify-center" onclick="event.stopPropagation()">
-                    ${content}
-                    <button onclick="this.closest('.fixed').remove()" class="absolute top-0 right-0 p-4 text-white hover:text-gray-400 transition-colors">
-                        <i data-lucide="x" class="w-8 h-8"></i>
-                    </button>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            lucide.createIcons();
+            else content = `<div class="text-white text-xl">Preview tidak tersedia.</div>`;
+            modal.innerHTML = `<div class="relative w-full h-full flex items-center justify-center" onclick="event.stopPropagation()">${content}<button onclick="this.closest('.fixed').remove()" class="absolute top-0 right-0 p-4 text-white hover:text-gray-400 transition-colors"><i data-lucide="x" class="w-8 h-8"></i></button></div>`;
+            document.body.appendChild(modal); lucide.createIcons();
         }
     </script>
 </body>
