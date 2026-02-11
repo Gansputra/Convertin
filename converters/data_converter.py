@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-def convert_data(input_path, output_path, target_format):
+def convert_data(input_path, output_path, target_format, preset_params=None):
     try:
         ext = os.path.splitext(input_path)[1].lower()
         

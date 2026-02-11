@@ -1,8 +1,12 @@
 import os
 import uuid
-from flask import Flask, render_template, request, send_from_directory, flash, redirect, url_for
+from flask import Flask, render_template, request, send_from_directory, flash, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
 
+from celery_worker import convert_task, create_zip_task, celery
+from celery.result import AsyncResult
+from logic.recommendation_engine import RecommendationEngine
+from logic.preset_manager import PresetManager
 from converters import image_converter, audio_converter, video_converter, document_converter, data_converter
 
 app = Flask(__name__)
@@ -14,7 +18,7 @@ OUTPUT_FOLDER = os.path.join(BASE_DIR, 'outputs')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024 # Increased for batch 
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -50,46 +54,103 @@ def allowed_file(filename):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('Tidak ada file yang dipilih')
-            return redirect(request.url)
+    return render_template('index.html')
+
+@app.route('/batch-upload', methods=['POST'])
+def batch_upload():
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files uploaded'}), 400
+    
+    files = request.files.getlist('files[]')
+    formats = request.form.getlist('formats[]')
+    presets = request.form.getlist('presets[]')
+    
+    if not files or not formats:
+        return jsonify({'error': 'Missing data'}), 400
         
-        file = request.files['file']
-        target_format = request.form.get('format')
-        
-        if file.filename == '':
-            flash('Nama file kosong')
-            return redirect(request.url)
-            
+    batch_id = uuid.uuid4().hex[:8]
+    batch_tasks = []
+    
+    for i, file in enumerate(files):
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            unique_filename = f"{uuid.uuid4().hex[:8]}_{filename}"
+            unique_filename = f"{batch_id}_{i}_{filename}"
             input_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             file.save(input_path)
             
-            file_ext = filename.rsplit('.', 1)[1].lower()
+            # Trace log
+            print(f"[DEBUG] File saved to: {input_path}")
+            print(f"[DEBUG] File exists: {os.path.exists(input_path)}")
+            
+            target_format = formats[i]
+            preset = presets[i] if i < len(presets) else 'balanced'
+            
             filename_no_ext = filename.rsplit('.', 1)[0]
-            output_filename = f"converted_{filename_no_ext}.{target_format.lower()}"
+            output_filename = f"converted_{filename_no_ext}_{uuid.uuid4().hex[:4]}.{target_format.lower()}"
             output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
             
-            converter_function = CONVERTER_MAP.get(file_ext)
+            # Start Celery Task
+            task = convert_task.delay(input_path, output_path, target_format, preset)
+            batch_tasks.append({
+                'task_id': task.id,
+                'original_name': filename,
+                'output_filename': output_filename
+            })
             
-            if converter_function:
-                try:
-                    success = converter_function(input_path, output_path, target_format)
-                    
-                    if success:
-                        flash(f"Berhasil! File dikonversi ke {target_format.upper()}", "success")
-                        return render_template('index.html', download_file=output_filename)
-                    else:
-                        flash("Gagal melakukan konversi. Cek log untuk detail.", "error")
-                except Exception as e:
-                    flash(f"Terjadi kesalahan sistem: {str(e)}", "error")
-            else:
-                flash("Tipe file tidak didukung.", "error")
-                
-    return render_template('index.html')
+    return jsonify({
+        'batch_id': batch_id,
+        'tasks': batch_tasks
+    })
+
+@app.route('/task-status/<task_id>')
+def task_status(task_id):
+    result = AsyncResult(task_id, app=celery)
+    response = {
+        'state': result.state,
+        'info': result.info if result.state == 'PROGRESS' else (result.result if result.ready() else None)
+    }
+    return jsonify(response)
+
+@app.route('/create-zip', methods=['POST'])
+def create_zip():
+    data = request.json
+    batch_id = data.get('batch_id')
+    output_filenames = data.get('filenames', [])
+    
+    if not output_filenames:
+        return jsonify({'error': 'No files to zip'}), 400
+        
+    zip_filename = f"batch_{batch_id}_{uuid.uuid4().hex[:4]}.zip"
+    zip_path = os.path.join(app.config['OUTPUT_FOLDER'], zip_filename)
+    
+    file_mappings = {name: os.path.join(app.config['OUTPUT_FOLDER'], name) for name in output_filenames}
+    
+    task = create_zip_task.delay(None, zip_path, file_mappings)
+    return jsonify({'task_id': task.id, 'zip_filename': zip_filename})
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        unique_filename = f"temp_{uuid.uuid4().hex[:8]}_{filename}"
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(temp_path)
+        
+        try:
+            analysis = RecommendationEngine.analyze_and_recommend(temp_path)
+            analysis['temp_filename'] = unique_filename
+            return jsonify(analysis)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+            
+    return jsonify({'error': 'File type not supported'}), 400
 
 @app.route('/download/<filename>')
 def download_file(filename):

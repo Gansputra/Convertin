@@ -12,27 +12,42 @@ def word_to_pdf(input_path, output_path):
         import pythoncom
         import win32com.client
         
+        # Ensure we use full normalized paths for Word COM
+        abs_input = os.path.abspath(input_path).replace('/', '\\')
+        abs_output = os.path.abspath(output_path).replace('/', '\\')
+        
+        print(f"[DOC] Attempting Word COM conversion: {abs_input} -> {abs_output}")
+        
+        if not os.path.exists(abs_input):
+            print(f"[DOC Error] Input file missing for Word: {abs_input}")
+            return False
+
         pythoncom.CoInitialize()
         wdFormatPDF = 17 # Constant for PDF
         
-        word = win32com.client.Dispatch("Word.Application")
+        # Use DispatchEx to ensure a fresh instance
+        word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
+        word.DisplayAlerts = 0 # wdAlertsNone
         
-        abs_input = os.path.abspath(input_path)
-        abs_output = os.path.abspath(output_path)
-        
-        doc = word.Documents.Open(abs_input)
-        doc.SaveAs(abs_output, FileFormat=wdFormatPDF)
-        doc.Close()
-        word.Quit()
-        return True
+        try:
+            doc = word.Documents.Open(abs_input, ReadOnly=True)
+            doc.SaveAs(abs_output, FileFormat=wdFormatPDF)
+            doc.Close(0) # wdDoNotSaveChanges
+            success = True
+        except Exception as e:
+            print(f"[Word Open/Save Error] {str(e)}")
+            success = False
+        finally:
+            word.Quit()
+            pythoncom.CoUninitialize()
+            
+        return success
     except Exception as e:
-        print(f"[Word COM Error] {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"[Word COM Critical Error] {str(e)}")
         return False
 
-def convert_document(input_path, output_path, target_format):
+def convert_document(input_path, output_path, target_format, preset_params=None):
     try:
         ext = os.path.splitext(input_path)[1].lower()
         target = target_format.lower()
