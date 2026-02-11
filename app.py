@@ -37,6 +37,7 @@ CONVERTER_MAP = {
     # Documents
     'pdf': document_converter.convert_document,
     'docx': document_converter.convert_document,
+    'doc': document_converter.convert_document,
     # Data
     'csv': data_converter.convert_data,
     'json': data_converter.convert_data,

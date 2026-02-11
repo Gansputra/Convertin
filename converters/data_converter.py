@@ -3,7 +3,6 @@ import os
 
 def convert_data(input_path, output_path, target_format):
     try:
-        # Baca input berdasarkan ekstensi
         ext = os.path.splitext(input_path)[1].lower()
         
         if ext == '.csv':
@@ -14,8 +13,6 @@ def convert_data(input_path, output_path, target_format):
             df = pd.read_json(input_path)
         else:
             return False
-
-        # Tulis output
         target = target_format.lower()
         
         if target == 'csv':

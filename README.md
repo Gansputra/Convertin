@@ -7,7 +7,7 @@
 - **Gambar**: JPG, JPEG, PNG, WEBP, SVG.
 - **Audio**: MP3, WAV, M4A, FLAC.
 - **Video**: MP4, MKV.
-- **Dokumen**: PDF ke DOCX, DOCX ke PDF.
+- **Dokumen**: PDF, DOCX, DOC. (Dukungan konversi PDF <-> DOCX/DOC)
 - **Data**: CSV, JSON, XLSX.
 - **Modular**: Arsitektur kode yang rapi dengan pemisahan logika converter.
 - **User Friendly**: Tampilan sederhana dan mudah digunakan.
