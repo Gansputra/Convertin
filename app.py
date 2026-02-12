@@ -152,15 +152,41 @@ def analyze():
         try:
             analysis = RecommendationEngine.analyze_and_recommend(temp_path)
             analysis['temp_filename'] = unique_filename
+            # Delete temp file after analysis is done
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             return jsonify(analysis)
         except Exception as e:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             return jsonify({'error': str(e)}), 500
             
     return jsonify({'error': 'File type not supported'}), 400
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
+    file_path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
+    
+    if not os.path.exists(file_path):
+        flash("File tidak ditemukan atau sudah dihapus.", "error")
+        return redirect(url_for('index'))
+
+    def generate():
+        with open(file_path, 'rb') as f:
+            yield from f
+        
+        # Hapus file setelah stream selesai (file sudah tertutup)
+        try:
+            os.remove(file_path)
+            print(f"[Cleanup] File output berhasil dihapus: {filename}")
+        except Exception as e:
+            print(f"[Cleanup Error] Gagal menghapus {filename}: {e}")
+
+    return app.response_class(
+        generate(),
+        mimetype='application/octet-stream',
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

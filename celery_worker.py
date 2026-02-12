@@ -66,23 +66,47 @@ def convert_task(self, input_path, output_path, target_format, preset, edit_para
         
         if success:
             self.update_state(state='PROGRESS', meta={'progress': 100})
+            # Clean up input file after successful conversion
+            try:
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+                    print(f"[Cleanup] File upload berhasil dihapus: {os.path.basename(input_path)}")
+            except:
+                pass
             return {'status': 'success', 'filename': os.path.basename(output_path)}
         else:
             return {'status': 'error', 'message': 'Conversion failed'}
     except Exception as e:
+        # Also try to clean up on error to keep it clean
+        try:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+                print(f"[Cleanup Error] File dihapus paksa setelah error: {os.path.basename(input_path)}")
+        except:
+            pass
         return {'status': 'error', 'message': str(e)}
 
 @celery.task
 def create_zip_task(batch_dir, output_zip_path, file_mappings):
     """
-    Creates a ZIP file for a batch of converted files.
+    Creates a ZIP file for a batch of converted files and cleans up.
     """
     try:
         with zipfile.ZipFile(output_zip_path, 'w') as zf:
             for original_name, converted_path in file_mappings.items():
                 if os.path.exists(converted_path):
-                    # We use the converted filename in the zip
+                    # Kita masukkan ke ZIP
                     zf.write(converted_path, arcname=os.path.basename(converted_path))
+                    
+        # Setelah ZIP jadi, HAPUS file-file sumber di outputs agar tidak menumpuk
+        for converted_path in file_mappings.values():
+            try:
+                if os.path.exists(converted_path):
+                    os.remove(converted_path)
+                    print(f"[Cleanup] File batch di-delete setelah masuk ZIP: {os.path.basename(converted_path)}")
+            except:
+                pass
+                
         return {'status': 'success', 'zip_filename': os.path.basename(output_zip_path)}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
