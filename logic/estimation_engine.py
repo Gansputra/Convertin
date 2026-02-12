@@ -4,40 +4,37 @@ class EstimationEngine:
     @staticmethod
     def estimate_output(metadata, target_format, preset):
         """
-        Estimates output size, quality, and processing time.
+        Estimates output size, quality, and savings percentage.
         """
         input_size = metadata.get('size', 0)
-        duration = metadata.get('duration', 0)
         
-        # Default multipliers
-        size_multiplier = 1.0
-        time_multiplier = 1.0
-        quality_label = "Good"
+        # Default multipliers based on preset and format
+        multipliers = {
+            'high_quality': {'size': 1.1, 'quality': 95, 'label': 'Excellent'},
+            'balanced': {'size': 0.7, 'quality': 85, 'label': 'Very Good'},
+            'small_size': {'size': 0.35, 'quality': 65, 'label': 'Optimized'}
+        }
         
-        if preset == 'high_quality':
-            size_multiplier = 1.5
-            time_multiplier = 2.0
-            quality_label = "Premium / Lossless"
-        elif preset == 'balanced':
-            size_multiplier = 0.8
-            time_multiplier = 1.0
-            quality_label = "High / Standard"
-        elif preset == 'small_size':
-            size_multiplier = 0.4
-            time_multiplier = 0.7
-            quality_label = "Reduced / Compressed"
-            
-        # Target format affects size too
-        if target_format == 'gif':
-            size_multiplier *= 3.0 # GIFs are huge
-        elif target_format == 'pdf':
-            size_multiplier *= 0.5
+        m = multipliers.get(preset, multipliers['balanced'])
+        
+        size_multiplier = m['size']
+        quality_score = m['quality']
+        quality_label = m['label']
+        
+        # Target format adjustments
+        target_format = target_format.lower()
+        if target_format in ['gif']:
+            size_multiplier *= 3.0
+            quality_score -= 20
+        elif target_format in ['webp', 'mp4']:
+            size_multiplier *= 0.8 # Better compression
+            quality_score += 5
+        elif target_format in ['png', 'wav', 'flac']:
+            size_multiplier = max(size_multiplier, 0.9) # Lossless/Large
+            quality_score = 100
             
         est_size = input_size * size_multiplier
-        
-        # Process time estimation (very rough: 1 second per 10MB as base)
-        base_time = (input_size / (1024 * 1024)) * 0.5 # 0.5s per MB
-        est_time = base_time * time_multiplier
+        saving_pct = max(0, round((1 - (est_size / input_size)) * 100)) if input_size > 0 else 0
         
         # Format size for display
         def format_size(size):
@@ -50,6 +47,7 @@ class EstimationEngine:
         return {
             "estimated_size": format_size(est_size),
             "estimated_quality": quality_label,
-            "estimated_time": f"{max(1, round(est_time))} seconds",
+            "quality_score": quality_score,
+            "savings": f"{saving_pct}%",
             "size_numeric": est_size
         }

@@ -209,6 +209,34 @@
         .modern-checkbox input:checked ~ span {
             color: #e5e7eb;
         }
+
+        /* Smart Analyzer Styles */
+        .analyzer-badge {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+        .quality-meter {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            position: relative;
+            overflow: hidden;
+        }
+        .quality-fill {
+            height: 100%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .metric-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 10px;
+            transition: all 0.3s;
+        }
+        .metric-card:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
     </style>
 </head>
 <body class="text-gray-200 flex flex-col items-center justify-center p-4">
@@ -470,11 +498,43 @@
                                 <div id="progress-bar-${entry.id}" class="h-full bg-indigo-500 transition-all duration-300" style="width: 0%"></div>
                             </div>
                         </div>
-                        <div id="config-${entry.id}" class="hidden mt-3 flex items-center gap-3">
-                            <select onchange="updateEntryFormat('${entry.id}', this.value)" class="bg-white/5 border border-white/10 rounded-lg py-1 px-2 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"></select>
-                            <span class="text-[9px] text-gray-400" id="rec-hint-${entry.id}"></span>
-                            <button type="button" onclick="toggleEditPanel('${entry.id}')" id="edit-btn-${entry.id}" class="ml-auto flex items-center gap-1.5 px-2 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg text-[9px] font-bold transition-all border border-indigo-500/20">
-                                <i data-lucide="sliders" class="w-3 h-3"></i> EDIT TOOLS
+                        
+                        <!-- Smart Analysis Dashboard -->
+                        <div id="analysis-panel-${entry.id}" class="hidden mt-4 space-y-3 animate-in fade-in zoom-in duration-500">
+                             <div class="analyzer-badge inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-white mb-1">
+                                <i data-lucide="sparkles" class="w-3 h-3"></i> SMART ANALYZER
+                             </div>
+                             
+                             <div class="grid grid-cols-2 gap-2">
+                                <div class="metric-card">
+                                    <span class="text-[8px] text-gray-500 uppercase block mb-1">Estimasi Ukuran</span>
+                                    <div class="flex items-baseline gap-1.5">
+                                        <span id="est-size-${entry.id}" class="text-sm font-bold text-white">-</span>
+                                        <span id="est-saving-${entry.id}" class="text-[10px] text-emerald-400 font-bold"></span>
+                                    </div>
+                                </div>
+                                <div class="metric-card">
+                                    <span class="text-[8px] text-gray-500 uppercase block mb-1">Kualitas Hasil</span>
+                                    <div id="est-quality-text-${entry.id}" class="text-xs font-bold text-indigo-300 mb-1">-</div>
+                                    <div class="quality-meter">
+                                        <div id="est-quality-bar-${entry.id}" class="quality-fill bg-indigo-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                             </div>
+                             
+                             <div class="p-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl">
+                                <div class="flex gap-2">
+                                    <i data-lucide="info" class="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5"></i>
+                                    <p id="est-reason-${entry.id}" class="text-[10px] text-gray-400 leading-relaxed italic"></p>
+                                </div>
+                             </div>
+                        </div>
+
+                        <div id="config-${entry.id}" class="hidden mt-4 flex items-center gap-3">
+                            <select onchange="updateEntryFormat('${entry.id}', this.value)" class="bg-indigo-500/10 border border-indigo-500/20 rounded-lg py-1.5 px-3 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"></select>
+                            <span class="text-[9px] text-gray-500" id="rec-hint-${entry.id}"></span>
+                            <button type="button" onclick="toggleEditPanel('${entry.id}')" id="edit-btn-${entry.id}" class="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 rounded-lg text-[10px] font-bold transition-all border border-indigo-500/30">
+                                <i data-lucide="sliders" class="w-3.5 h-3.5"></i> EDIT TOOLS
                             </button>
                         </div>
                     </div>
@@ -618,6 +678,7 @@
             const badge = document.getElementById(`status-badge-${entry.id}`);
             const metaSpan = document.getElementById(`meta-${entry.id}`);
             const configDiv = document.getElementById(`config-${entry.id}`);
+            const analysisDiv = document.getElementById(`analysis-panel-${entry.id}`);
             const select = configDiv.querySelector('select');
             const toolsContainer = document.getElementById(`tools-container-${entry.id}`);
 
@@ -625,8 +686,23 @@
                 badge.innerText = "READY";
                 badge.className = "text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 uppercase font-bold";
                 const meta = entry.metadata;
-                metaSpan.innerText = `${meta.format.toUpperCase()} ${meta.resolution ? '• ' + meta.resolution : ''} ${meta.duration ? '• ' + meta.duration.toFixed(1)+'s' : ''}`;
                 
+                // Detailed metadata display
+                let metaText = `${meta.format.toUpperCase()}`;
+                if (meta.resolution !== 'N/A') metaText += ` • ${meta.resolution}`;
+                if (meta.bitrate) metaText += ` • ${Math.round(meta.bitrate/1000)}kbps`;
+                if (meta.duration) metaText += ` • ${meta.duration.toFixed(1)}s`;
+                metaSpan.innerText = metaText;
+                
+                // Show analysis dashboard
+                analysisDiv.classList.remove('hidden');
+                const rec = entry.recommendation;
+                document.getElementById(`est-size-${entry.id}`).innerText = rec.estimation.estimated_size;
+                document.getElementById(`est-saving-${entry.id}`).innerText = `-${rec.estimation.savings}`;
+                document.getElementById(`est-quality-text-${entry.id}`).innerText = rec.estimation.estimated_quality;
+                document.getElementById(`est-quality-bar-${entry.id}`).style.width = `${rec.estimation.quality_score}%`;
+                document.getElementById(`est-reason-${entry.id}`).innerText = rec.reason;
+
                 select.innerHTML = '';
                 const ext = entry.file.name.split('.').pop().toLowerCase();
                 let fileCategory = '';
@@ -648,8 +724,8 @@
                     toolsHtml = `
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Resolusi</label>
-                            <select onchange="updateEditParam('${entry.id}', 'resolution', this.value)" class="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white">
-                                <option value="">Original</option>
+                            <select onchange="updateEditParam('${entry.id}', 'resolution', this.value)" class="w-full bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2 py-1.5 text-[10px] text-white">
+                                <option value="original">Original</option>
                                 <option value="720p">720p (HD)</option>
                                 <option value="480p">480p (SD)</option>
                                 <option value="360p">360p</option>
@@ -723,26 +799,113 @@
             const h = entry.metadata.height;
             
             if (value === 'original') {
+                delete entry.edit_params.scale_pct;
                 delete entry.edit_params.width;
                 delete entry.edit_params.height;
             } else {
                 const scale = parseInt(value) / 100;
+                entry.edit_params.scale_pct = value;
                 entry.edit_params.width = Math.round(w * scale);
                 entry.edit_params.height = Math.round(h * scale);
             }
+            updateAnalysisUI(entry);
         }
 
         function updateEditParam(id, key, value) {
             const entry = selectedFiles.find(e => e.id === id);
             if (entry) {
-                if (value === "" || value === false) delete entry.edit_params[key];
+                if (value === "" || value === false || value === "original") delete entry.edit_params[key];
                 else entry.edit_params[key] = value;
+                updateAnalysisUI(entry);
             }
         }
 
         function updateEntryFormat(id, format) {
             const entry = selectedFiles.find(e => e.id === id);
-            if (entry) entry.target_format = format;
+            if (entry) {
+                entry.target_format = format;
+                updateAnalysisUI(entry);
+            }
+        }
+
+        function updateAnalysisUI(entry) {
+            const analysisDiv = document.getElementById(`analysis-panel-${entry.id}`);
+            if (!analysisDiv || !entry.metadata) return;
+
+            const targetFmt = entry.target_format.toLowerCase();
+            const sourceFmt = entry.metadata.format.toLowerCase();
+            const inputSize = entry.metadata.size;
+            
+            // Mirroring Backend Estimation Logic in JS for Instant Preview
+            let sizeMult = 0.7; // Default for 'balanced'
+            let qualityScore = 85;
+            let qualityLabel = "Very Good";
+            
+            if (entry.preset === 'high_quality') { sizeMult = 1.1; qualityScore = 95; qualityLabel = "Excellent"; }
+            if (entry.preset === 'small_size') { sizeMult = 0.35; qualityScore = 65; qualityLabel = "Optimized"; }
+
+            // Format Specific Adjustments
+            if (['png', 'wav', 'flac'].includes(targetFmt)) {
+                sizeMult = Math.max(sizeMult, 1.2); // Lossless usually grows or stays large
+                qualityScore = 100;
+                qualityLabel = "Lossless (Maksimal)";
+            } else if (targetFmt === 'gif') {
+                sizeMult *= 4.0;
+                qualityScore -= 20;
+                qualityLabel = "Reduced (Format 8-bit)";
+            } else if (['webp', 'mp4'].includes(targetFmt)) {
+                sizeMult *= 0.8;
+                qualityScore += 5;
+            }
+
+            // Resolution Adjustments (Edit Tools Sync)
+            if (entry.edit_params.resolution) {
+                const res = entry.edit_params.resolution;
+                if (res === '720p') { sizeMult *= 0.6; qualityScore -= 5; }
+                else if (res === '480p') { sizeMult *= 0.35; qualityScore -= 10; }
+                else if (res === '360p') { sizeMult *= 0.2; qualityScore -= 15; }
+            }
+            
+            // Duration Adjustments (Trim Sync)
+            let durationMult = 1.0;
+            if (entry.edit_params.trim_start !== undefined && entry.edit_params.trim_end !== undefined) {
+                const trimDuration = parseFloat(entry.edit_params.trim_end) - parseFloat(entry.edit_params.trim_start);
+                const originalDuration = entry.metadata.duration || 1;
+                durationMult = Math.max(0.01, trimDuration / originalDuration);
+            }
+            
+            // Image Scaling Adjustments
+            if (entry.edit_params.scale_pct) {
+                const scale = parseInt(entry.edit_params.scale_pct) / 100;
+                sizeMult *= (scale * scale); // Area based scaling
+                if (scale < 0.5) qualityScore -= 10;
+            }
+
+            // Real-time Reason Generator
+            let reason = `Konversi dari ${sourceFmt.toUpperCase()} ke ${targetFmt.toUpperCase()} menggunakan preset ${entry.preset}.`;
+            if (sourceFmt === 'jpg' && targetFmt === 'png') {
+                reason = "PNG adalah format lossless. Konversi dari JPG akan menjaga kualitas tetap utuh namun ukuran file kemungkinan akan MEMBENGKAK.";
+            } else if (targetFmt === 'webp') {
+                reason = "WebP adalah pilihan cerdas! Format ini memberikan kualitas setara JPG/PNG dengan ukuran file jauh lebih kecil.";
+            } else if (targetFmt === 'gif') {
+                reason = "Hati-hati: GIF bukan format video efisien. Ukuran file akan meningkat drastis karena setiap frame disimpan utuh.";
+            } else if (['mp3', 'm4a'].includes(targetFmt) && ['wav', 'flac'].includes(sourceFmt)) {
+                reason = "Format terkompresi (lossy) akan menghemat ruang penyimpanan Anda hingga ratusan persen dengan kualitas yang tetap jernih.";
+            }
+
+            const estSize = inputSize * sizeMult * durationMult;
+            const saving = Math.max(-500, Math.round((1 - (estSize / inputSize)) * 100));
+            const savingText = saving >= 0 ? `-${saving}%` : `+${Math.abs(saving)}%`;
+            const savingClass = saving >= 0 ? 'text-emerald-400' : 'text-rose-400';
+
+            document.getElementById(`est-size-${entry.id}`).innerText = formatSize(estSize);
+            const savingEl = document.getElementById(`est-saving-${entry.id}`);
+            savingEl.innerText = savingText;
+            savingEl.className = `text-[10px] ${savingClass} font-bold`;
+            
+            document.getElementById(`est-quality-text-${entry.id}`).innerText = qualityLabel;
+            document.getElementById(`est-quality-bar-${entry.id}`).style.width = `${qualityScore}%`;
+            document.getElementById(`est-reason-${entry.id}`).innerText = reason;
         }
 
         function removeEntry(id) {
