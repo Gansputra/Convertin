@@ -5,7 +5,7 @@
 ---
 
 ## 📸 Preview
-![Main Dashboard Placeholder](https://via.placeholder.com/800x450?text=Screenshot+Main+Dashboard)
+![Main Dashboard Placeholder](assets/dashboard.png)
 *Tampilan utama dashboard Convertin dengan tema Glassmorphism.*
 
 ---
@@ -49,7 +49,7 @@
 ---
 
 ## ⚙️ Edit Tools & Smart Analyzer
-![Edit Tools Placeholder](https://via.placeholder.com/800x300?text=Screenshot+Edit+Tools+Analyzer)
+![Edit Tools Placeholder](assets/editTools.png)
 *Fitur editing (resolusi, trim, scaling) yang sinkron dengan estimasi penghematan ukuran file.*
 
 ---
